@@ -1,0 +1,306 @@
+---
+title: "DataB01A10"
+author: "Daniel Paul"
+date: '2022-11-29'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Load the necessary libraries**
+```{r}
+suppressMessages(
+  if (!require('igraph')) {
+    install.packages('igraph')
+    library('igraph') })
+
+suppressMessages(
+  if (!require('maps')) {
+    install.packages('maps')
+    library('maps') })
+
+suppressMessages(
+  if (!require('DescTools')) {
+    install.packages('DescTools')
+    library('DescTools') })
+
+suppressMessages(
+  if (!require('viridis')) {
+    install.packages('viridis')
+    library('viridis') })
+```
+
+**Reading in the data**
+The data used for the assignment was NBA trade statistics from: https://www.reddit.com/r/nba/comments/ovis0z/2021_offseason_trade_tracker/ 
+This contains season data about what players were traded to which teams during the 2021 Offseason. The data is read into a dataframe with the nodes being the teams of interest, and the 
+arrows being from which team to which the players were traded. 
+
+This analysis is useful because offseason player movement frequently is a predictor of regular season success. The number of players moved may play a role in team success, or vice versa. The teams on the periphery who are not involved are shown without the edges. 
+
+The three letter abbreviations stand for the teams in the NBA. 
+```{r}
+library(igraph)
+
+nodes_teams=read.csv(file='teams.csv', header=TRUE)
+edges_trades = read.csv(file='trades.csv', header=TRUE)
+players=strsplit(edges_trades$Team.1.Receives, ",")
+
+origin=edges_trades$Team.1
+dest=edges_trades$Team.2
+vertices=nodes_teams$team
+
+
+edges = data.frame("from" = origin, "to" = dest)
+teams=data.frame(nodes_teams$team)
+lay=data.frame(name=nodes_teams$team,latitude=nodes_teams$lat,longtitude=nodes_teams$lon)
+g = graph.data.frame(edges, directed=T, vertices=lay)
+
+g2= graph.data.frame(edges, directed=T, vertices=lay)#used later
+g3= graph.data.frame(edges, directed=T, vertices=lay)#used later
+
+location = layout.norm(as.matrix(lay[,2:3]))
+
+plot(g,layout=layout.auto,main="NBA TRADES FOR 2021 SEASON", edge.arrow.size = 0.5, edge.arrow.width = 0.75,rescale=TRUE)
+```
+**Most Active Teams**
+The teams who traded away the most players are shown with the enlarged vertex, likewise the teams who did not trade as many player are show with the barely visible nodes. The degree is the measure used for the vertex size. Scaling respective to the outdegree. 
+
+```{r}
+V(g)$size = degree(g, mode = "out")*10
+plot(g,layout=layout.auto,main="Most Active Teams", edge.arrow.size = 0.5, edge.arrow.width = 0.75,rescale=TRUE)
+```
+
+**NBA Teams mapped**
+
+The locations of the teams in the cities of which are in the US (all but the Toronto Raptors) are mapped in red, the black lines between the red points show all teams that exchanged players. The distance players have to travel is readily visible from this map. 
+
+```{r}
+library(maps)
+
+map("state")
+points(lay$longtitude,lay$latitude,col="red",pch = 19)
+segments(x0=lay$longtitude[match(edges$from, lay$name)],y0=lay$latitude[match(edges$from, lay$name)],x1=lay$longtitude[match(edges$to, lay$name)],y1=lay$latitude[match(edges$to, lay$name)])
+title("Locations of Teams in the NBA")
+```
+**Distances measure**
+
+In the case of NBA teams trading players the distances measure can be interpreted as players moving from one team to another, with the number associated to each team being how many teams are in between the player traded from one team to another. With inf representing teams where if you look at trade connections it isn't possible to get to said team. 
+
+```{r}
+writeLines("Distances of the graph:")
+distances(g)
+```
+**Dijkstra's Algorithm**
+
+Dijkstra's algorithm for finding the shortest paths between nodes in the graph is applied. So again looking at the shortest number of teams are needed to see the consecutive trades from team to team. The dijkstra algorithm looks at both in and out mode of each team. 
+```{r}
+writeLines("Distances (in) of the graph:")
+distances(g, mode = "in",algorithm ="dijkstra")
+
+writeLines("\nDistances (out) of the graph:")
+distances(g, mode = "out",algorithm ="dijkstra")
+```
+**Eccentricity**
+
+The eccentricity of a given team/vertex is its shortest path distance from the farthest other team/vertex in the graph. And of course farthest in this case is in reference to the teams and player being traded. 
+
+The radius of the graph is the smallest eccentricity. Whilst the diameter of the graph is the largest eccentricity. 
+
+```{r}
+writeLines("Eccentricity (all/in/out) of the graph:")
+eccentricity(g)
+eccentricity(g, mode = "in")
+eccentricity(g, mode = "out")
+
+writeLines("Radius (all/in/out) of the graph:")
+radius(g)
+min(distances(g, mode = "in"))
+min(distances(g, mode = "out"))
+
+writeLines("Diameter (all/in/out) of the graph:")
+diameter(g)
+diameter(g,unconnected=TRUE)
+diameter(g,unconnected=TRUE)
+```
+
+**Central Points, Periphery**
+
+The peripheral vertices of a graph are the vertices with the maximum eccentricity.
+The central vertices of a graph are the vertices with the minimum eccentricity. 
+```{r}
+e_out = eccentricity(g2, mode = "out")
+
+writeLines("Central points:")
+V(g2)[which(e_out == min(e_out))]$name
+V(g2)[which(e_out == min(e_out))]$color = "violet"
+
+writeLines("Periphery:")
+V(g2)[which(e_out == max(e_out))]$name
+V(g2)[which(e_out == max(e_out))]$color = "blue"
+```
+##The central points and periphery
+
+Central points are violet, and the periphery is blue. 
+```{r}
+plot(g2)
+```
+
+**Girth**
+This is the shortest cycle in the graph, again in this instance this is in reference to the number of consecutive teams that traded players. 
+```{r}
+girth(g3)
+```
+**Edge Density**
+The ratio between the edges present in a graph and the maximum number of edges that the graph can contain. The number is low implying there were not many trades, however this is to be expected as the NBA season generally does not have many trades. 
+```{r}
+edge_density(g3)
+```
+
+The graph is not connected
+```{r}
+is.connected(g3, "weak")
+is.connected(g3, "strong") 
+```
+The points which are once removed would disonnect the graph
+```{r}
+articulation_points(g3)
+```
+
+**Components of the graph**
+Each component of the graph are plotted in a different colour. As is evident there is one connected component and every other vertex is not, which are the teams that did not make any trades during the season. There are however two components which have traded players but are not connected to the primary component. 
+```{r}
+G_disconnected = induced_subgraph(g3, V(g3)$name[V(g3)$name != "NOP"])
+is_connected(G_disconnected)
+
+comps = components(G_disconnected)$membership
+colbar = rainbow(max(comps)+1) #colors of the rainbow
+V(G_disconnected)$color = colbar[comps+1]
+
+plot(G_disconnected)
+title("Connected components")
+```
+**Degree distribution **
+This a rather useful measure because this shows the number of players sent by frequency overall. As expected most teams traded one player, however some sent more etc. The outdegree is the teams that traded away players, in degree being players that received players, and the degree in black being the overall one. This distribution is shown here. 
+
+```{r}
+
+degree(g3, mode = "out")
+degree(g3, mode = "in")
+degree(g3)
+
+distrib_outdegree = degree_distribution(g3, mode = "out")
+distrib_indegree = degree_distribution(g3, mode = "in")
+distrib_degree = degree_distribution(g3)
+
+y_max = max(max(distrib_indegree, distrib_outdegree), distrib_degree)
+plot(distrib_degree, type = "b", lwd = 2, col = "black", ylim = c(0, y_max))
+points(distrib_outdegree, type = "b", lwd = 2, col = "blue")
+points(distrib_indegree, type = "b", lwd = 2, col = "red")
+```
+**Knn Classification**
+The teams are classified based on what group they might fall under, the different numbers corresponding to the different groups. This is in reference to the players traded and how each team acted at the deadline.
+```{r}
+knn(g3, mode = "all")
+knn(g3, mode = "in")
+knn(g3, mode = "out")
+```
+
+**Knn plot**
+
+The legend corresponds to how likely each team belongs to a certain group, the type of group is based on the teams actions prior the trade deadline. 
+```{r}
+library(DescTools)
+library(viridis)
+
+knn_in = knn(g3, mode = "in")$knn
+knn_in_bar = sort(unique(round(knn_in)))
+knn_vals = (ceiling(knn_in))
+
+max=0
+for(vals in knn_vals){
+  if(!is.nan(vals)){
+     if(vals>max){
+       max=vals
+    }
+  }
+}
+
+colbar=viridis(max)
+V(g3)$color = colbar[round(knn_in)]
+
+
+plot(g3)
+ColorLegend(x = "right", col = colbar, width = 0.1, inset = 0.1, labels = sprintf("%d", knn_in_bar))
+```
+
+**Coreness**
+
+This measure looks at the subgroups of teams that are interlinked
+```{r}
+coreness(g3, "all")
+coreness(g3, "in")
+coreness(g3, "out")
+```
+**Coreness Plot**
+These different groups are plotted with the colors.
+
+This plots the different interlinked subgroups in the graph. 
+```{r}
+cores = coreness(g3) 
+max=0
+for(vals in cores){
+  if(!is.nan(vals)){
+     if(vals>max){
+       max=vals
+    }
+  }
+}
+
+V(g3)$color = colbar[cores]
+colbar =viridis(max)
+
+plot(g3)
+legend("bottomleft", legend = sprintf("%d", sort(unique(cores))), pch = rep(19, length(unique(cores))), pt.cex = rep(5, length(unique(cores))), cex = 2, box.lty=0, col = colbar[sort(unique(cores))])
+```
+
+**Betweenness**
+The different components of a graph have a node that connects them, this looks at the team that serves as a bridge in player transfer. 
+```{r}
+betweenness(g)
+```
+
+**Betweenness plot**
+The players of relevance are plotted with the bridge serving as the teams that transferred a key player connecting a different parts of the graph
+```{r}
+
+betweenness_MB = betweenness(g3)
+colbar = viridis(max(ceiling(betweenness_MB))+1)
+V(g3)$color = colbar[round(betweenness_MB)+1]
+colbar_str = sprintf("%d", range(unique(round(betweenness_MB))))
+
+plot(g3)
+ColorLegend(x = "right", col = colbar, width = 0.5, inset = 0.1,labels = colbar_str)
+```
+
+```{r}
+closeness(g3, mode = "all")
+closeness(g3, mode = "in")
+closeness(g3, mode = "out")
+```
+
+**Page Rank Algorithm**
+
+The number of key links to other teams plays a key role in the page rank algorithm. The teams are connected to each other with the higher scoring teams having a relatively higher degree. In addition other factors such as between and such are considered by the function in igraph. 
+```{r}
+page_rankA = page.rank(g3)
+max(page_rankA$vector)
+
+colbar = viridis(max((page_rankA$vector)*100))
+round((page_rankA$vector)*100)
+V(g3)$color = colbar[round((page_rankA$vector)*100)]
+
+plot(g3)
+ColorLegend(x = "right", col = colbar, width = 0.5, inset = 0.1,labels = colbar_str)
+```
